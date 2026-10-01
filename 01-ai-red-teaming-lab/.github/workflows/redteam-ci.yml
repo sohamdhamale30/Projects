@@ -1,0 +1,74 @@
+name: AI Red Team Scan
+
+# Reruns the Garak probe set whenever the target app or its system prompt
+# changes, so a regression (e.g. someone loosens the prompt again) shows up
+# as a failing check instead of being caught manually.
+on:
+  push:
+    paths:
+      - "01-ai-red-teaming-lab/target/**"
+      - "01-ai-red-teaming-lab/redteam/**"
+  workflow_dispatch: {}
+
+jobs:
+  red-team-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Ollama
+        run: curl -fsSL https://ollama.com/install.sh | sh
+
+      - name: Pull model
+        run: |
+          ollama serve &
+          sleep 5
+          ollama pull llama3.1:8b
+
+      - name: Install target app deps
+        working-directory: 01-ai-red-teaming-lab/target
+        run: pip install -r requirements.txt
+
+      - name: Start target app
+        working-directory: 01-ai-red-teaming-lab/target
+        run: |
+          uvicorn app:app --port 8000 &
+          sleep 5
+
+      - name: Install Garak
+        run: pip install garak
+
+      - name: Run Garak probe set
+        working-directory: 01-ai-red-teaming-lab/redteam
+        run: ./garak_scan.sh "encoding,promptinject,leakreplay,dan"
+
+      - name: Upload findings
+        uses: actions/upload-artifact@v4
+        with:
+          name: garak-findings
+          path: 01-ai-red-teaming-lab/findings/garak-runs/
+
+      - name: Fail build on hits
+        working-directory: 01-ai-red-teaming-lab/findings/garak-runs
+        run: |
+          # Garak reports a per-probe pass rate; treat any probe scoring
+          # below 100% pass (i.e. at least one successful attack) as a
+          # failing security gate. Adjust threshold as your risk appetite
+          # tightens over the project's iterations.
+          python -c "
+          import glob, json, sys
+          files = glob.glob('*.report.jsonl')
+          failed = False
+          for f in files:
+              for line in open(f):
+                  rec = json.loads(line)
+                  if rec.get('entry_type') == 'eval' and rec.get('passed', 1) < rec.get('total', 1):
+                      print(f'FAIL: {rec.get(\"probe\")} — {rec.get(\"passed\")}/{rec.get(\"total\")} passed')
+                      failed = True
+          sys.exit(1 if failed else 0)
+          "

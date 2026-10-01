@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables / secrets
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Test/cache files
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Garak generated reports
+findings/garak-runs/
+
+# Temporary files
+*.tmp
+*.temp
